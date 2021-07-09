@@ -140,6 +140,7 @@ add_filter('rest_prepare_user',function ($response,$user,$request){
     if($user_id){
         $data['email']      = $user->data->user_email;
         $data['user_name']  = $user->data->user_login;
+        $data['roles']  = $user->roles;
         $data['first_name'] = get_user_meta($user_id,'first_name')[0];
         $data['last_name']  = get_user_meta($user_id,'last_name')[0];
         $data['nickname']   = get_user_meta($user_id,'nickname')[0];
