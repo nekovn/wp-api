@@ -1,4 +1,48 @@
 <?php
+
+//custom login if is sub then can not login
+function ace_block_wp_admin() {
+    $user           = wp_get_current_user();
+    $allowed_roles  = array( 'editor', 'administrator', 'author' );
+    if ( is_admin() && ! array_intersect( $allowed_roles, $user->roles ) && ! ( defined( 'DOING_AJAX' ) && DOING_AJAX ) ) {
+        wp_safe_redirect( home_url( '/phamcuong.php' ));
+        exit;
+    }
+}
+//custom seo
+add_action( 'rest_api_init', 'slug_register_yoast_seo_meta' );
+function slug_register_yoast_seo_meta() {
+    register_rest_field( 'post',
+        '_yoast_wpseo_title',
+        array(
+            'get_callback'    => 'get_seo_meta_title',
+            'update_callback' => null,
+            'schema'          => null,
+        )
+    );
+    register_rest_field( 'post',
+        '_yoast_wpseo_metadesc',
+        array(
+            'get_callback'    => 'get_seo_meta_des',
+            'update_callback' => null,
+            'schema'          => null,
+        )
+    );
+}
+function get_seo_meta_des( $object, $field_name, $request ) {
+    return get_post_meta( $object[ 'id' ], $field_name, true );
+}
+
+function get_seo_meta_title( $object, $field_name, $request ) {
+    $yoast_title = get_post_meta($object[ 'id' ], '_yoast_wpseo_title', true);
+    $title = strstr($yoast_title, '%%', true);
+    if (empty($title)) {
+        $title = get_the_title($object[ 'id' ]);
+    }
+    return $title;
+}
+//custom seo end
+add_action( 'admin_init', 'ace_block_wp_admin' );
 //custom role
 add_action('rest_api_init',function (){
     $wpRoles = wp_roles();//gọi wp roles
@@ -11,8 +55,23 @@ add_action('rest_api_init',function (){
     if(!$capSubscriber->capabilities['publish_posts']){
         $wpRoles->add_cap('subscriber','publish_posts');
     }
+    if(!$capSubscriber->capabilities['delete_posts']){
+        $wpRoles->add_cap('subscriber','delete_posts');
+    }
+    if(!$capSubscriber->capabilities['edit_posts']){
+        $wpRoles->add_cap('subscriber','edit_published_posts');
+    }
 });
 add_action('rest_api_init', function () {
+
+    register_rest_field('user', 'roles', array(
+        'get_callback' => 'get_user_roles',
+        'update_callback' => null,
+        'schema' => array(
+            'type' => 'array'
+        )
+    ));
+
     // Get Image Thumbnail by featured_media id of post
     register_rest_field('post',
         'featured_media_url', // Vi tri nay tren tuy chon
@@ -54,6 +113,11 @@ add_action('rest_api_init', function () {
         )
     );
 });
+//get role cho user
+function get_user_roles($object, $field_name, $request) {
+    return get_userdata($object['id'])->roles;
+}
+
 //count total comment
 function get_rest_post_comment_count($post, $field_name, $request)
 {
@@ -140,7 +204,6 @@ add_filter('rest_prepare_user',function ($response,$user,$request){
     if($user_id){
         $data['email']      = $user->data->user_email;
         $data['user_name']  = $user->data->user_login;
-        $data['roles']  = $user->roles;
         $data['first_name'] = get_user_meta($user_id,'first_name')[0];
         $data['last_name']  = get_user_meta($user_id,'last_name')[0];
         $data['nickname']   = get_user_meta($user_id,'nickname')[0];
@@ -150,8 +213,13 @@ add_filter('rest_prepare_user',function ($response,$user,$request){
 },10,3);
 
 add_filter( 'bdpwr_code_email_text' , function( $text , $email , $code , $expiry ) {
-  $text = "Đặt lại mật khẩu đã được yêu cầu cho email :  " . $email .". Code đặt lại mật khẩu của bạn:  " . $code . ". \n sẽ hết hạn vào lúc" . bdpwr_get_formatted_date( $expiry ) . ".";
-   return $text;
+    $text = "Cảm ơn bạn đã tham gia「https://neko-vn.jp」。\r\n";
+    $text .= "Email đã yêu cầu đặt lại mật khẩu： " . $email ."。\r\n";
+    $text .= "Code:  " . $code . "。\r\n";
+    $text .= "Code sẽ hết hạn vào lúc [" . bdpwr_get_formatted_date( $expiry ) . "]。\r\n";
+    $text .= "Chúc bạn luôn mạnh khỏe !";
+
+    return $text;
 }, 10 , 4 );
 
 //FILTER TO ADD CUSTOM NAMESPACE FOR REST API for reset password
@@ -162,7 +230,7 @@ add_filter( 'bdpwr_route_namespace' , function( $route_namespace ) {
 
 //set subject
 add_filter( 'bdpwr_code_email_subject' , function( $subject ) {
-    return 'Đặt lại mật khẩu của bạn';
+    return 'Cài lại mật khẩu cho 「https://neko-vn.jp';
 }, 10 , 1 );
 //set length code
 add_filter( 'bdpwr_code_length' , function( $length ) {
