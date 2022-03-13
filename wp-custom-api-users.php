@@ -1,5 +1,6 @@
 <?php
 add_action('rest_api_init', function () {
+    // custom Api register
     register_rest_route('wp/v2', '/users/register', array(
         'methods' => WP_REST_Server::CREATABLE,
         'callback' => 'handle_route_users_register',
@@ -28,7 +29,6 @@ add_action('rest_api_init', function () {
 
         )
     ));
-
     //custom Api change password
     register_rest_route('wp/v2', '/users/password', array(
         'methods' => WP_REST_Server::EDITABLE,
@@ -74,13 +74,229 @@ add_action('rest_api_init', function () {
 
     //custom api get post related by categories
     register_rest_route('wp/v2', '/post/related/', array(
-        'methods'  => 'GET',
+        'methods' => 'GET',
         'callback' => 'related_posts_endpoint'
     ));
-
-
+    // custom Api update post
+    register_rest_route('wp/v2', '/users/post', array(
+        'methods' => 'POST',
+        'callback' => 'handle_route_users_post',
+    ));
+    // custom Api user infor
+    register_rest_route('wp/v2', '/users/inf', array(
+        'methods' => 'GET',
+        'callback' => 'handle_route_users_inf',
+    ));
+    // custom Api other articles
+    register_rest_route('wp/v2', '/post/other', array(
+        'methods' => 'GET',
+        'callback' => 'handle_route_post_other',
+    ));
+    // custom Api information admin
+    register_rest_route('wp/v2', '/admin/inf', array(
+        'methods' => 'GET',
+        'callback' => 'handle_route_admin_inf',
+    ));
+    // custom Api posts pending
+    register_rest_route('wp/v2', '/posts/pending', array(
+        'methods' => 'GET',
+        'callback' => 'get_rest_author_post_pending',
+    ));
+    // custom Api posts preview
+    register_rest_route('wp/v2', '/posts/message', array(
+        'methods' => 'GET',
+        'callback' => 'get_rest_author_post_draft',
+    ));
 });
+//posts draft
+function get_rest_author_post_draft($request)
+{
+    $author_id = $request->get_param('author');
+    if ($author_id) {
+        $args = array(
+            'author'      => $author_id,
+            'orderby'     => 'post_date',
+            'order'       => 'DESC',
+            'post_status' => 'draft'
+        );
 
+        $draft = get_posts($args);
+        $newArray = [];
+        foreach ($draft as $key => $value) {
+            $newArray[$key] = array(
+                'id'            =>  $value->ID,
+                'title'         =>  ['rendered' => $value->post_title],
+                'content'       =>  ['rendered' => $value->post_content],
+                'post_date'     =>  $value->post_date,
+            );
+        }
+        $response = new WP_REST_Response(array(
+            'message' => $newArray
+        ), 200);
+        return $response;
+    } else {
+        $response = new WP_REST_Response(array(
+            'message' => ''
+        ), 200);
+        return $response;
+    }
+}
+//posts pending
+function get_rest_author_post_pending($request)
+{
+    $author_id = $request->get_param('author');
+    if ($author_id) {
+        $args = array(
+            'author' => $author_id,
+            'orderby' => 'post_date',
+            'order' => 'DESC',
+            'post_status' => 'pending'
+        );
+
+        $pending = get_posts($args);
+        $newArray = [];
+        foreach ($pending as $key => $value) {
+            $newArray[$key] = array(
+                'title'               => ['rendered' => $value->post_title],
+                'content'             => ['rendered' => $value->post_content],
+                'comment_count'       => $value->comment_count,
+                'categories'          =>  get_the_category($value->ID)[0]->name,
+                'view_count'          =>  pvc_get_post_views($value->ID),
+                'featured_media_url'  => get_the_post_thumbnail_url($value->ID),
+                'id'                  =>  $value->ID,
+            );
+        }
+        $response = new WP_REST_Response(array(
+            'pending' => $newArray
+        ), 200);
+        return $response;
+    } else {
+        $response = new WP_REST_Response(array(
+            'pending' => ''
+        ), 200);
+        return $response;
+    }
+}
+
+//get dmin information
+function handle_route_admin_inf()
+{
+    $data = array(
+        'facebook_link' => get_user_meta(1, 'facebook', true),
+        'instagram_link' => get_user_meta(1, 'instagram', true),
+        'twitter_link' => get_user_meta(1, 'twitter', true),
+        'email' => get_user_meta(1, 'soundcloud', true),
+        'address' => get_user_meta(1, 'wikipedia', true),
+        'tell' => get_user_meta(1, 'tumblr', true),
+
+    );
+    $response = new WP_REST_Response(array(
+        'result' => $data,
+        'status' => 200
+    ), 200);
+
+    return $response;
+
+}
+
+//get other articles
+function handle_route_post_other($request)
+{
+    $args_post = array(
+        'author' => $request->get_param('author'),
+        'orderby' => 'post_date',
+        'order' => 'ASC',
+        'posts_per_page' => 10
+    );
+    $current_user_posts = get_posts($args_post);
+    $post_ids = [];
+    for ($i = 0; $i < count($current_user_posts); $i++) {
+        $post_ids[] .= $current_user_posts[$i]->ID;
+    }
+    $args_post_new = array(
+        'exclude' => $post_ids,
+        'orderby' => 'post_date',
+        'order' => 'ASC',
+        'posts_per_page' => 10
+    );
+    $new_user_posts = get_posts($args_post_new);
+    $newArray = [];
+    foreach ($new_user_posts as $key => $value) {
+        $newArray[$key] = array(
+            'title' => ['rendered' => $value->post_title],
+            'featured_media_url' => get_the_post_thumbnail_url($value->ID),
+            'author_data' => ['nickname' => get_the_author_meta('nickname', $value->post_author)],
+            'date' => $value->post_date,
+            'slug' => $value->post_name
+
+        );
+    }
+
+    $response = new WP_REST_Response(array(
+        'result' => $newArray,
+        'status' => 200
+    ), 200);
+    return $response;
+}
+
+//get user information
+function handle_route_users_inf($request)
+{
+    $user_info = get_userdata($request->get_param('user_id'));
+    $args_cm = array(
+        'user_id' => $request->get_param('user_id'),   // Use post_id, not post_ID
+        'count' => true // Return only the count
+    );
+    $args = array(
+        'author' => $request->get_param('user_id'),
+        'orderby' => 'post_date',
+        'order' => 'ASC',
+        'post_status' => 'publish'
+    );
+
+    $posts = get_posts($args);
+    $view = [];
+    for ($i = 0; $i < count($posts); $i++) {
+        if (function_exists('pvc_get_post_views')) {
+            $view[] .= pvc_get_post_views($posts[$i]->ID);
+        }
+    }
+    $maxView = (int)max($view);
+    $countView = array_sum($view);
+    $countPost = (int)count_user_posts($request->get_param('user_id'));
+    $countCm = get_comments($args_cm);
+    $money = ($countView * 500) + ($countPost * 5000) + ($countCm * 500);
+
+    if (function_exists('pvc_get_post_views')) {
+        $arr_most_viewed = pvc_get_most_viewed_posts();
+        $most_viewed = $arr_most_viewed[0]->post_views;
+        if ($maxView === $most_viewed) {
+            $vip = 1;
+        } else {
+            $vip = 0;
+        }
+    }
+
+    $data = array(
+        'user_nicename' => $user_info->nickname,
+        'roles' => $user_info->roles[0],
+        'user_registered' => $user_info->user_registered,
+        'description' => get_the_author_meta('description', $request->get_param('user_id')),
+        'avatar' => get_user_meta($request->get_param('user_id'), 'simple_local_avatar')[0]['full'],
+        'total_posts' => $countPost,
+        'total_comments' => $countCm,
+        'view' => $maxView,
+        'money' => $money,
+        'vip' => $vip
+    );
+    $response = new WP_REST_Response(array(
+        'result' => $data,
+        'status' => 200
+    ), 200);
+
+    return $response;
+
+}
 
 //get post related by categories
 function related_posts_endpoint($request_data)
@@ -89,37 +305,99 @@ function related_posts_endpoint($request_data)
         array(
             'post_type' => 'post',
             'category__in' => wp_get_post_categories($request_data['post_id']),
-            'posts_per_page' => 5,
+            'posts_per_page' => 15,
             'post__not_in' => array($request_data['post_id']),//your requested post id
         )
     );
 
     $newArray = [];
-    foreach ($posts as $key=>$value){
-        $newArray[$key]=array(
-            'title'              => ['rendered'=> $value->post_title],
+    foreach ($posts as $key => $value) {
+        $newArray[$key] = array(
+            'title' => ['rendered' => $value->post_title],
             'featured_media_url' => get_the_post_thumbnail_url($value->ID),
-            'author_data'        => ['nickname'=> get_the_author_meta('nickname',$value->post_author)],
-            'date'               => $value->post_date,
-            'slug'               => $value->post_name
+            'author_data' => ['nickname' => get_the_author_meta('nickname', $value->post_author)],
+            'date' => $value->post_date,
+            'slug' => $value->post_name
 
         );
     }
     $response = new WP_REST_Response(); // thành công thì trả về cho ng dùng
-    $response -> set_data( $newArray );
+    $response->set_data($newArray);
 
     return $response;
 }
 
+//get custom Api update post
+function handle_route_users_post($request)
+{
+    $my_post = array(
+        'post_title' => wp_strip_all_tags($request->get_param('post_title')),
+        'post_content' => $request->get_param('post_content'),
+        'post_status' => 'publish',
+        'post_name' => $request->get_param('post_name'),
+        'post_author' => $request->get_param('post_author'),
+        'post_category' => array($request->get_param('post_category'))
+    );
+
+// Insert the post into the database
+    $post_id = wp_insert_post($my_post);
+    if (!$post_id) {
+        return new WP_Error(
+            'rest_user_post',
+            __('Đã có lỗi xảy ra .Vui lòng thử lại sau！'),
+            array('status' => 400)
+        );
+    }
+
+    Generate_Featured_Image($request->get_param('image_url'), $post_id, $request->get_param('post_author'));
+
+    $response = new WP_REST_Response(); // thành công thì trả về cho ng dùng
+    $response->set_data(
+        array(
+            'updated' => true,
+        )
+    );
+    return $response;
+
+}
+
+//Featured_Image
+function Generate_Featured_Image($image_url, $post_id, $post_author)
+{
+    $upload_dir = wp_upload_dir();
+    $image_data = file_get_contents($image_url);
+    $filename = basename($image_url);
+    if (wp_mkdir_p($upload_dir['path']))
+        $file = $upload_dir['path'] . '/' . $filename;
+    else
+        $file = $upload_dir['basedir'] . '/' . $filename;
+    file_put_contents($file, $image_data);
+
+    $wp_filetype = wp_check_filetype($filename, null);
+    $attachment = array(
+        'post_mime_type' => $wp_filetype['type'],
+        'post_title' => sanitize_file_name($filename),
+        'post_content' => '',
+        'post_author' => $post_author,
+        'post_status' => 'inherit',
+
+    );
+    $attach_id = wp_insert_attachment($attachment, $file, $post_id);
+    require_once(ABSPATH . 'wp-admin/includes/image.php');
+    $attach_data = wp_generate_attachment_metadata($attach_id, $file);
+    wp_update_attachment_metadata($attach_id, $attach_data);
+    set_post_thumbnail($post_id, $attach_id);
+}
+
 //check password
-function neko_check_user_password($value, $message = 'Mật khẩu')
+function neko_check_user_password($value, $message = 'mật khẩu')
 {
     $password = (string)$value;
 
     if (empty($password)) {
         return new WP_Error(
             'rest_user_invalid_password_empty',
-            __("$message không được rỗng."),
+            __("$message không được trống！"),
             array('status' => 400)
         );
     }
@@ -129,7 +407,7 @@ function neko_check_user_password($value, $message = 'Mật khẩu')
     if (!preg_match($pattern, $password)) {
         return new WP_Error(
             'rest_user_invalid_password_short',
-            __("$message  phải dài từ 3 đến 18 ký tự."),
+            __("$message  phải dài từ 3->18 ký tự！"),
             array('status' => 400)
         );
     }
@@ -137,7 +415,7 @@ function neko_check_user_password($value, $message = 'Mật khẩu')
     if (!preg_match($pattern, $password)) {
         return new WP_Error(
             'rest_user_invalid_password_flower',
-            __("$message  phải có ít nhất 1 ký tự in hoa."),
+            __("$message  phải tồn tại ít nhất 1 chữ cái in hoa！"),
             array('status' => 400)
         );
     }
@@ -145,7 +423,7 @@ function neko_check_user_password($value, $message = 'Mật khẩu')
     if (!preg_match($pattern, $password)) {
         return new WP_Error(
             'rest_user_invalid_password_number',
-            __("$message  phải có ít nhất 1 ký tự số."),
+            __("$message  phải tồn tại ít nhất 1 chữ số！"),
             array('status' => 400)
         );
     }
@@ -153,7 +431,7 @@ function neko_check_user_password($value, $message = 'Mật khẩu')
     if (false !== strpos($password, '\\')) {
         return new WP_Error(
             'rest_user_invalid_password_backslash',
-            __("$message  không được có '\\'."),
+            __("$message  '\\'không chính xác！"),
             array('status' => 400)
         );
     }
@@ -161,7 +439,7 @@ function neko_check_user_password($value, $message = 'Mật khẩu')
     if (false !== strpos($password, ' ')) {
         return new WP_Error(
             'rest_user_invalid_password_space',
-            __("$message  không được có khoảng trắng."),
+            __("$message  không được có khoảng trắng！"),
             array('status' => 400)
         );
     }
@@ -184,9 +462,9 @@ function handle_route_users_change_password($request)
     }
 
     $password = $request->get_param('password');
-    $new_password = neko_check_user_password($request->get_param('new_password'), 'Mật khẩu mới');
+    $new_password = neko_check_user_password($request->get_param('new_password'), 'mật khẩu mới');
     $confirm_new_password = neko_check_user_password($request->get_param('confirm_new_password'),
-        'Xác nhận mật khẩu mới');
+        'xác nhận mật khẩu mới');
 
     if (is_wp_error($password)) return $password;
     if (is_wp_error($new_password)) return $new_password;
@@ -195,14 +473,14 @@ function handle_route_users_change_password($request)
     if ($password == $new_password) {
         return new WP_Error(
             'rest_user_invalid_new_password',
-            __('Mật khẩu mới không được trùng với mật khẩu cũ.'),
+            __('Mật khẩu cũ không được giống mật khẩu mới'),
             array('status' => 400)
         );
     }
     if ($new_password !== $confirm_new_password) {
         return new WP_Error(
             'rest_user_invalid_confirm_password',
-            __('Xác nhận mật khẩu mới không khớp.'),
+            __('Xác nhận Mật khẩu mới không chính xác！'),
             array('status' => 400)
         );
     }
@@ -213,7 +491,7 @@ function handle_route_users_change_password($request)
     if (is_wp_error($user_check)) {
         return new WP_Error(
             'rest_user_invalid_password',
-            __('Mật khẩu cũ không đúng.Vui lòng thử lại.'),
+            __('Mật khẩu cũ không chính xác .Vui lòng nhập lại mật khẩu cũ！'),
             array('status' => 400)
         );
     }
@@ -223,7 +501,7 @@ function handle_route_users_change_password($request)
     if (is_wp_error($new_user)) {
         return new WP_Error(
             'rest_user_update_password',
-            __('Có lỗi xảy ra trong quá trình xử lí .Vui lòng thử lại.'),
+            __('Đã có lỗi xảy ra .Vui lòng nhập lại sau！'),
             array('status' => 400)
         );
     }
@@ -236,8 +514,6 @@ function handle_route_users_change_password($request)
     );
     return $response;
 }
-
-;
 
 //handle_route_users_reset_password
 function handle_route_users_reset_password($request)
@@ -261,7 +537,7 @@ function handle_route_users_reset_password($request)
     if ($new_password !== $confirm_new_password) {
         return new WP_Error(
             'rest_user_invalid_confirm_password',
-            __('Xác nhận mật khẩu mới không khớp.'),
+            __('Xác nhận mật khẩu mới không chính xác！'),
             array('status' => 400)
         );
     }
@@ -286,21 +562,21 @@ function neko_check_username($value)
     if (!validate_username($username)) {
         return new WP_Error(
             'rest_user_invalid_username',
-            __('Tên đăng nhập không phù hợp.'),
+            __('Tên đăng nhập không hợp lệ！'),
             array('status' => 400)
         );
     }
     if (false !== strpos($username, ' ')) {
         return new WP_Error(
             'rest_user_invalid_empty',
-            __('Tên đăng nhập không được có khoảng trắng.'),
+            __('Tên đăng nhập không được có khoảng trắng！'),
             array('status' => 400)
         );
     }
     if (false !== strpos($username, '.')) {
         return new WP_Error(
             'rest_user_invalid_dots',
-            __('Tên đăng nhập không được có dấu "."'),
+            __('Tên đăng nhập không được có dấu「。」'),
             array('status' => 400)
         );
     }
@@ -327,11 +603,10 @@ function handle_route_users_register($request)
     if ($users_can_register === false) {
         return new WP_Error(
             'rest_user_cannot_register',
-            __('Bạn không thể đăng ký tài khoảng.'),
+            __('Không thể đăng ký tài khoảng！'),
             array('status' => 400)
         );
     }
-
 
     $email = $request->get_param('email');
     $username = neko_check_username($request->get_param('username'));
